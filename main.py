@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
+from typing import Any
+
+import os
 import sys
+import json
 from pathlib import Path
 
 import duckdb
@@ -11,6 +15,7 @@ import rich
 from rich.panel import Panel
 from rich.text import Text
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 
 # Constants
@@ -20,7 +25,7 @@ DATA_DIR: Path = PROJECT_DIR / 'data'
 SYSTEM_PROMPT_PATH: Path = PROJECT_DIR / 'system-prompt.txt'
 SAILORS_DATASET_PATH: Path = DATA_DIR / 'sailors.csv'
 ITEMS_DATASET_PATH: Path = DATA_DIR / 'items.csv'
-DB_FILE_PATH: Path = DATA_DIR / 'pirate_data.duckdb'
+DB_FILE_PATH: Path = DATA_DIR / 'pirate_data.tmp.duckdb'
 # Other 
 LLM_API_ENDPOINT: str = 'https://inference.mlmp.ti.bfh.ch/api/v1'
 MODEL_NAME: str = 'ollama/gpt-oss:120b'
@@ -33,6 +38,9 @@ console = rich.console.Console()
 # Load data
 # You can't use read_only when loading data via CSVs
 # We therefore use the CSV files to create a .db file which we then can use in read_only mode
+if DB_FILE_PATH.is_file():
+    # Delete existing to make sure we use the latest version of the csv files for the database
+    os.remove(str(DB_FILE_PATH))
 conn = duckdb.connect(str(DB_FILE_PATH))
 conn.execute(f"CREATE TABLE sailors AS SELECT * FROM read_csv_auto('{SAILORS_DATASET_PATH}')")
 conn.execute(f"CREATE TABLE items AS SELECT * FROM read_csv_auto('{ITEMS_DATASET_PATH}')")
@@ -64,6 +72,24 @@ system_prompt_message: dict[str, str] = {
     'content': system_prompt,
 }
 
+# Define Tools (LLM Function Calls)
+tools: list[dict[str, Any]] = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'query_database',
+            'description': 'Execute a SQL query on the pirate database',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'sql': {'type': 'string', 'description': 'SQL query to execute'}
+                },
+                'required': ['sql']
+            }
+        }
+    }
+]
+
 
 # Interactions loop
 console.print(5 * '\n', end='')
@@ -78,12 +104,9 @@ while True:
     try:
         user_input = input("\n> ")
     except KeyboardInterrupt:
-        # Handle Ctrl+C gracefully
         break
-    # Check if user wants to quit
     if user_input.lower() in ['quit', 'exit']:
         break
-    # Add user prompt to messages
     user_message: dict[str, str] = {
         'role': 'user',
         'content': user_input,
@@ -96,12 +119,65 @@ while True:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
+            tools=tools,
         )
     response_obj = response.choices[0].message
-    response_reasoning: str = response_obj.reasoning_content 
+    
+    # Handle tool calls (may need multiple rounds)
+    while response_obj.tool_calls:
+        # Add assistant message with tool calls to history
+        messages.append(response_obj)
+        
+        # Execute each tool call
+        for tool_call in response_obj.tool_calls:
+            function_name = tool_call.function.name
+            function_args = json.loads(tool_call.function.arguments)
+            
+            # Display tool call
+            console.print(Panel(
+                Syntax(function_args['sql'], 'sql', theme='monokai', line_numbers=False),
+                title=f"[bold yellow]Tool Call:[/bold yellow] {function_name}",
+                border_style="yellow",
+                expand=True
+            ))
+            
+            # Execute SQL query
+            try:
+                result = conn.execute(function_args['sql']).fetchall()
+                result_str = json.dumps(result, indent=2, default=str)
+            except Exception as e:
+                result_str = f"Error executing query: {str(e)}"
+            
+            # Display result
+            console.print(Panel(
+                Text(result_str, style="white"),
+                title="[bold yellow]Query Result[/bold yellow]",
+                border_style="yellow",
+                expand=True
+            ))
+            console.print("")
+            
+            # Add tool result to messages
+            tool_message: dict[str, Any] = {
+                'role': 'tool',
+                'tool_call_id': tool_call.id,
+                'content': result_str,
+            }
+            messages.append(tool_message)
+        
+        # Get next response after tool execution
+        with console.status("[bold blue]Processing results...[/bold blue]", spinner="dots"):
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                tools=tools,
+            )
+        response_obj = response.choices[0].message
+    
+    # Display final LLM response
+    response_reasoning: str | None = getattr(response_obj, 'reasoning_content', None)
     response_content: str = response_obj.content
     
-    # Display LLM Response
     if response_reasoning:
         console.print(Panel(
             Text(response_reasoning, style="dim italic white"),
@@ -118,10 +194,6 @@ while True:
     console.print("")
     
     # Add LLM response to messages
-    llm_message: dict[str, str] = {
-        'role': 'assistant',
-        'content': response_content,
-    }
-    messages.append(llm_message)
+    messages.append(response_obj)
 
 print('\n\nGoodbye!\n\n')

@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 
+import duckdb
 from openai import OpenAI
 from dotenv import dotenv_values
 
@@ -17,6 +18,9 @@ from rich.markdown import Markdown
 PROJECT_DIR: Path = Path('.')
 DATA_DIR: Path = PROJECT_DIR / 'data'
 SYSTEM_PROMPT_PATH: Path = PROJECT_DIR / 'system-prompt.txt'
+SAILORS_DATASET_PATH: Path = DATA_DIR / 'sailors.csv'
+ITEMS_DATASET_PATH: Path = DATA_DIR / 'items.csv'
+DB_FILE_PATH: Path = DATA_DIR / 'pirate_data.duckdb'
 # Other 
 LLM_API_ENDPOINT: str = 'https://inference.mlmp.ti.bfh.ch/api/v1'
 MODEL_NAME: str = 'ollama/gpt-oss:120b'
@@ -25,6 +29,15 @@ CONFIG: dict[str, str] = dotenv_values('.env')
 
 # Init rich print
 console = rich.console.Console()
+
+# Load data
+# You can't use read_only when loading data via CSVs
+# We therefore use the CSV files to create a .db file which we then can use in read_only mode
+conn = duckdb.connect(str(DB_FILE_PATH))
+conn.execute(f"CREATE TABLE sailors AS SELECT * FROM read_csv_auto('{SAILORS_DATASET_PATH}')")
+conn.execute(f"CREATE TABLE items AS SELECT * FROM read_csv_auto('{ITEMS_DATASET_PATH}')")
+conn.close()
+conn = duckdb.connect(str(DB_FILE_PATH), read_only=True)
 
 # Check .env fields
 REQUIRED_DOTENV_FIELDS: list[str] = ['LLM_API_KEY']
@@ -106,7 +119,7 @@ while True:
     
     # Add LLM response to messages
     llm_message: dict[str, str] = {
-        'role': 'user',
+        'role': 'assistant',
         'content': response_content,
     }
     messages.append(llm_message)

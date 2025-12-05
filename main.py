@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+
 from openai import OpenAI
 from dotenv import dotenv_values
 
 
+# Constants
+# Paths
+PROJECT_DIR: Path = Path('.')
+DATA_DIR: Path = PROJECT_DIR / 'data'
+SYSTEM_PROMPT_PATH: Path = PROJECT_DIR / 'system-prompt.txt'
+# Other 
 LLM_API_ENDPOINT: str = 'https://inference.mlmp.ti.bfh.ch/api/v1'
 MODEL_NAME: str = 'ollama/gpt-oss:120b'
 CONFIG: dict[str, str] = dotenv_values('.env')
@@ -20,13 +28,25 @@ for field_name in REQUIRED_DOTENV_FIELDS:
         \n'''
         raise KeyError(msg)
 
+# Establish connection with LLM
 client = OpenAI(
     base_url=LLM_API_ENDPOINT,
     api_key=CONFIG['LLM_API_KEY']
 )
 
+# Load system prompt
+assert SYSTEM_PROMPT_PATH.is_file(), f'System prompt is missing. Please save a file with the system prompt at "{SYSTEM_PROMPT_PATH.absolute()}"'
+with open(SYSTEM_PROMPT_PATH, 'r') as f:
+    system_prompt: str = f.read()
 
-messages: list[dict[str, str]] = []
+
+# Main interaction
+messages: list[dict[str, str]] = [
+    {
+        'role': 'system',
+        'content': system_prompt,
+    }
+]
 while True:
     # --- User Part --- #
     # Get user prompt

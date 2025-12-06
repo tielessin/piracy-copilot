@@ -22,6 +22,7 @@ from rich.syntax import Syntax
 # Paths
 PROJECT_DIR: Path = Path('.')
 DATA_DIR: Path = PROJECT_DIR / 'data'
+DOTENV_FILE_PATH: Path = PROJECT_DIR / '.env'
 SYSTEM_PROMPT_PATH: Path = PROJECT_DIR / 'system-prompt.txt'
 SAILORS_DATASET_PATH: Path = DATA_DIR / 'sailors.csv'
 ITEMS_DATASET_PATH: Path = DATA_DIR / 'items.csv'
@@ -29,7 +30,7 @@ DB_FILE_PATH: Path = DATA_DIR / 'pirate_data.tmp.duckdb'
 # Other 
 LLM_API_ENDPOINT: str = 'https://inference.mlmp.ti.bfh.ch/api/v1'
 MODEL_NAME: str = 'ollama/gpt-oss:120b'
-CONFIG: dict[str, str] = dotenv_values('.env')
+CONFIG: dict[str, str] = dotenv_values(DOTENV_FILE_PATH)
 
 
 # Init rich print

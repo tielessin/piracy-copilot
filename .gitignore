@@ -28,7 +28,7 @@ __pycache__
 /.dev/
 /data/pla_assignments-anonymized.csv
 /data/pla_assignments_backup-anonymized.csv
-/data/pirate_data.duckdb
+*.duckdb
 
 
 # Keep

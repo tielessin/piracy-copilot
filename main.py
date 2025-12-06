@@ -5,68 +5,50 @@ from typing import Any
 import os
 import sys
 import json
-from pathlib import Path
 
 import duckdb
 from openai import OpenAI
-from dotenv import dotenv_values
 
-import rich
+from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-
-# Constants
-# Paths
-PROJECT_DIR: Path = Path('.')
-DATA_DIR: Path = PROJECT_DIR / 'data'
-DOTENV_FILE_PATH: Path = PROJECT_DIR / '.env'
-SYSTEM_PROMPT_PATH: Path = PROJECT_DIR / 'system-prompt.txt'
-SAILORS_DATASET_PATH: Path = DATA_DIR / 'sailors.csv'
-ITEMS_DATASET_PATH: Path = DATA_DIR / 'items.csv'
-DB_FILE_PATH: Path = DATA_DIR / 'pirate_data.tmp.duckdb'
-# Other 
-LLM_API_ENDPOINT: str = 'https://inference.mlmp.ti.bfh.ch/api/v1'
-MODEL_NAME: str = 'ollama/gpt-oss:120b'
-CONFIG: dict[str, str] = dotenv_values(DOTENV_FILE_PATH)
+import config
 
 
 # Init rich print
-console = rich.console.Console()
+console = Console()
 
 # Load data
 # You can't use read_only when loading data via CSVs
 # We therefore use the CSV files to create a .db file which we then can use in read_only mode
-if DB_FILE_PATH.is_file():
+if config.DB_FILE_PATH.is_file():
     # Delete existing to make sure we use the latest version of the csv files for the database
-    os.remove(str(DB_FILE_PATH))
-conn = duckdb.connect(str(DB_FILE_PATH))
-conn.execute(f"CREATE TABLE sailors AS SELECT * FROM read_csv_auto('{SAILORS_DATASET_PATH}')")
-conn.execute(f"CREATE TABLE items AS SELECT * FROM read_csv_auto('{ITEMS_DATASET_PATH}')")
+    os.remove(str(config.DB_FILE_PATH))
+conn = duckdb.connect(str(config.DB_FILE_PATH))
+conn.execute(f"CREATE TABLE sailors AS SELECT * FROM read_csv_auto('{config.SAILORS_DATASET_PATH}')")
+conn.execute(f"CREATE TABLE items AS SELECT * FROM read_csv_auto('{config.ITEMS_DATASET_PATH}')")
 conn.close()
-conn = duckdb.connect(str(DB_FILE_PATH), read_only=True)
+conn = duckdb.connect(str(config.DB_FILE_PATH), read_only=True)
 
-# Check .env fields
-REQUIRED_DOTENV_FIELDS: list[str] = ['LLM_API_KEY']
-for field_name in REQUIRED_DOTENV_FIELDS:
-    if field_name not in CONFIG.keys():
-        msg = f"Missing entry for '{field_name}' in .env file."
-        console.print(f"[bold red]Error:[/bold red] {msg}")
-        sys.exit(1)
+# Validate required configuration
+if not config.LLM_API_KEY:
+    console.print(f"[bold red]Error:[/bold red] Missing 'LLM_API_KEY' in .env file.")
+    sys.exit(1)
 
 # Establish connection with LLM
 client = OpenAI(
-    base_url=LLM_API_ENDPOINT,
-    api_key=CONFIG['LLM_API_KEY']
+    base_url=config.LLM_API_ENDPOINT,
+    api_key=config.LLM_API_KEY
 )
 
 # Load system prompt
-if not SYSTEM_PROMPT_PATH.is_file():
-    console.print(f"[bold red]Error:[/bold red] System prompt missing at {SYSTEM_PROMPT_PATH.absolute()}")
+if not config.SYSTEM_PROMPT_PATH.is_file():
+    console.print(f"[bold red]Error:[/bold red] System prompt missing at {config.SYSTEM_PROMPT_PATH.absolute()}")
     sys.exit(1)
-with open(SYSTEM_PROMPT_PATH, 'r') as f:
+with open(config.SYSTEM_PROMPT_PATH, 'r') as f:
     system_prompt: str = f.read()
 system_prompt_message: dict[str, str] = {
     'role': 'system',
@@ -118,7 +100,7 @@ while True:
     # Send prompt (with conversation history) and get response
     with console.status("[bold blue]Thinking...[/bold blue]", spinner="dots"):
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.MODEL_NAME,
             messages=messages,
             tools=tools,
         )
@@ -169,7 +151,7 @@ while True:
         # Get next response after tool execution
         with console.status("[bold blue]Processing results...[/bold blue]", spinner="dots"):
             response = client.chat.completions.create(
-                model=MODEL_NAME,
+                model=config.MODEL_NAME,
                 messages=messages,
                 tools=tools,
             )

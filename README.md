@@ -2,6 +2,12 @@
 
 ...
 
+## Requirements
+
+Python >=3.12
+
+Note: It probably also works for earlier versions of python, but it was only tested with version 3.12
+
 ## Usage 
 
 ```bash
